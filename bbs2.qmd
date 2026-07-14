@@ -1,0 +1,433 @@
+---
+title: "BBS data for Painted Bunting"
+format:
+  html:
+    code-fold: show
+    code-tools: true
+toc: true
+toc-title: Document Contents
+number-sections: true
+embed-resources: true
+---
+
+### Load package and fetch the bbs data
+```{r}
+#install bbsBayes2
+#install.packages("bbsBayes2", repos = c(bbsbayes = 'https://bbsbayes.r-universe.dev', CRAN = 'https://cloud.r-project.org'))
+
+#install cmdstanr
+#install.packages("cmdstanr", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+#cmdstanr::install_cmdstan()
+#check if this worked
+cmdstanr::check_cmdstan_toolchain(fix = TRUE)
+
+#load library and fetch data
+library(bbsBayes2)
+#only needs to be run once
+bbsBayes2::fetch_bbs_data(release = 2025, force=TRUE)
+library(dplyr)
+library(ggplot2)
+```
+
+### modify source code to make the scale on the map more relevant for this dataset
+```{r}
+plot_map <- function(trends,
+                     slope = FALSE,
+                     title = TRUE,
+                     alternate_column = NULL,
+                     col_viridis = FALSE,
+                     col_ebird = FALSE,
+                     strata_custom = NULL,
+                     zoom_range = TRUE) {
+
+  # Checks
+  #check_data(trends)
+  #check_logical(slope, title, col_viridis, col_ebird)
+  alternate_trend_column <- NULL
+  stratify_by <- trends[["meta_data"]]$stratify_by
+  species <- trends[["meta_data"]]$species
+
+  trends <- dplyr::filter(trends[["trends"]], .data$region_type == "stratum")
+  start_year <- min(trends$start_year)
+  end_year <- min(trends$end_year)
+
+  #stratify_by <- check_strata(stratify_by,custom = strata_custom)
+
+  if(!is.null(strata_custom)){
+    map <- strata_custom
+    map <- dplyr::select(map, "strata_name") %>%
+      dplyr::mutate(strata_name = as.character(.data$strata_name))
+  }else{
+    map <- load_map(stratify_by[1])
+  }
+
+  if(!is.null(alternate_column)){
+    if(!alternate_column %in% names(trends)){
+      stop("alternate_column is missing from trends.",
+      "Specify a numerical column from the trends dataframe")
+    }
+    ## if the values in the alternate column are trends, then use the same
+    ## colour scheme and breaks to match the defaul trend maps
+    if(grepl("trend",alternate_column,ignore.case = TRUE)){
+      alternate_trend_column <- alternate_column
+      alternate_column <- NULL
+    }
+  }
+
+  if(zoom_range){
+    bb <- dplyr::inner_join(x = map, y = trends, by = c("strata_name" = "region")) %>%
+      sf::st_bbox()
+    xl <- bb[c("xmin","xmax")]
+    yl <- bb[c("ymin","ymax")]
+    zoom <- ggplot2::coord_sf(xlim = xl,ylim = yl)
+  }
+
+
+  if(is.null(alternate_column)){
+  breaks <- c(-3, -2, -1.5, -1, -0.5, 0.5, 1, 1.5, 2, 3)
+  labls <- c(paste0("< ", breaks[1]),
+             paste0(breaks[-c(length(breaks))],":", breaks[-c(1)]),
+             paste0("> ",breaks[length(breaks)]))
+  labls <- paste0(labls, " %")
+
+  #check_slope(trends, slope)
+  if(is.null(alternate_trend_column)){
+  if(slope){ trend_col <- "slope_trend" }else{trend_col <- "trend"}
+  }else{
+
+    trend_col <- alternate_trend_column
+  }
+
+  trends$t_plot <- as.numeric(as.character(trends[[trend_col]]))
+  trends$t_plot <- cut(trends$t_plot, breaks = c(-Inf, breaks, Inf),
+                      labels = labls)
+
+  if(title) {
+    title <- paste(species, trend_col, start_year, "-", end_year)
+  } else title <- NULL
+
+
+  map <- dplyr::left_join(x = map, y = trends, by = c("strata_name" = "region"))
+
+
+  m <- ggplot2::ggplot() +
+    ggplot2::geom_sf(data = map, ggplot2::aes(fill = .data$t_plot),
+                     colour = "grey40", size = 0.1, show.legend = TRUE) +
+    ggplot2::theme_minimal() +
+    ggplot2::labs(title = title,
+                  fill = paste0(trend_col,"\n", start_year, "-", end_year)) +
+    ggplot2::theme(legend.position = "right",
+                   line = ggplot2::element_line(linewidth = 0.4),
+                   rect = ggplot2::element_rect(linewidth = 0.1),
+                   axis.text = ggplot2::element_blank(),
+                   axis.line = ggplot2::element_blank(),
+                   axis.title = ggplot2::element_blank()) +
+    ggplot2::guides(fill = ggplot2::guide_legend(reverse = TRUE))
+  if(!col_viridis) {
+    if(!col_ebird){
+    pal <- stats::setNames(
+      c("#a50026", "#d73027", "#f46d43", "#fdae61", "#fee090", "#ffffbf",
+        "#e0f3f8", "#abd9e9", "#74add1", "#4575b4", "#313695"),
+      levels(map$t_plot))
+
+    m <- m + ggplot2::scale_fill_manual(values = pal, na.value = "white",
+                                        drop = FALSE)
+    }else{
+      pal <- stats::setNames(
+        c("#A50F15", "#CB181D", "#EF3B2C", "#FB6A4A", "#FC9272", "#FFFFFF",
+          "#9ECAE1", "#6BAED6", "#4292C6", "#2171B5", "#08519C"),
+        levels(map$t_plot))
+
+      m <- m + ggplot2::scale_fill_manual(values = pal, na.value = "#CCCCCC",
+                                          drop = FALSE)
+    }
+  } else {
+    m <- m + ggplot2::scale_fill_viridis_d(na.value = "white",
+                                           drop = FALSE)
+  }
+
+  }else{ # if plotting alternate_column
+
+    if((!grepl(x = alternate_column,pattern = "percent_change") &
+        !grepl(x = alternate_column, pattern = "trend")) & col_ebird){
+      warning("Setting col_viridis = TRUE. \n",
+              "The eBird colour palette is designed for visualising ",
+              "percent population changes or trends. If setting ",
+              "col_ebird = TRUE, then select an alternate_column ",
+              "with a header that starts with trend or percent_change.",
+              call. = FALSE, immediate. = TRUE)
+      }
+
+    trend_col <- alternate_column
+    trends$t_plot <- as.numeric(as.character(trends[[trend_col]]))
+
+    pal <- NULL # if still NULL after next set of options
+    ## if alternate and ebird colour palette
+    if(grepl(x = alternate_column,pattern = "percent_change") & col_ebird){
+      breaks <- c(-30, -20, -10, 0, 10, 20, 30)
+      labls <- c(paste0("< ", breaks[1]),
+                 paste0(breaks[-c(length(breaks))],":", breaks[-c(1)]),
+                 paste0("> ",breaks[length(breaks)]))
+      labls <- paste0(labls, " %")
+      trends$t_plot <- cut(trends$t_plot, breaks = c(-Inf, breaks, Inf),
+                           labels = labls)
+
+      pal <- stats::setNames(
+        c( "#CB181D", "#EF3B2C", "#FB6A4A", "#FC9272", # if col_ebird & percent_change match the scale and values of eBird's trend page
+           "#9ECAE1", "#6BAED6", "#4292C6", "#2171B5"),
+        levels(trends$t_plot))
+
+    }
+    ## if alternate == percent_change and NOT ebird colour palette
+    if(!col_ebird & grepl(x = alternate_column,pattern = "percent_change")){
+      breaks <- c(-75,-50,-33, -25, -10, 11, 33, 50,100,300)
+      labls <- c(paste0("< ", breaks[1]),
+                 paste0(breaks[-c(length(breaks))],":", breaks[-c(1)]),
+                 paste0("> ",breaks[length(breaks)]))
+      labls <- paste0(labls, " %")
+      trends$t_plot <- cut(trends$t_plot, breaks = c(-Inf, breaks, Inf),
+                           labels = labls)
+      pal <- stats::setNames(
+        c("#a50026", "#d73027", "#f46d43", "#fdae61", "#fee090", "#ffffbf",
+          "#e0f3f8", "#abd9e9", "#74add1", "#4575b4", "#313695"),
+        levels(trends$t_plot))
+
+
+    }
+    ## if alternate and includes string "trend" (e.g., uncertainty bounds)
+    ## AND user has not called for either of the alternate palettes
+  if(grepl(x = alternate_column,pattern = "trend") & !col_ebird & !col_viridis){
+
+    breaks <- c(-7, -4, -2, -1, -0.5, 0.5, 1, 2, 4, 7)
+    labls <- c(paste0("< ", breaks[1]),
+               paste0(breaks[-c(length(breaks))],":", breaks[-c(1)]),
+               paste0("> ",breaks[length(breaks)]))
+    labls <- paste0(labls, " %")
+    trends$t_plot <- cut(trends$t_plot, breaks = c(-Inf, breaks, Inf),
+                         labels = labls)
+    pal <- stats::setNames(
+      c("#a50026", "#d73027", "#f46d43", "#fdae61", "#fee090", "#ffffbf",
+        "#e0f3f8", "#abd9e9", "#74add1", "#4575b4", "#313695"),
+      levels(trends$t_plot))
+
+
+  }
+
+    if(title) {
+      title <- paste(species, alternate_column, start_year, "-", end_year)
+    } else title <- NULL
+
+    map <- dplyr::left_join(x = map, y = trends, by = c("strata_name" = "region"))
+
+    discrete_column <- ifelse(is.numeric(map$t_plot),FALSE,TRUE)
+
+    m <- ggplot2::ggplot() +
+      ggplot2::geom_sf(data = map, ggplot2::aes(fill = .data$t_plot),
+                       colour = "grey40", size = 0.1, show.legend = TRUE) +
+      ggplot2::theme_minimal() +
+      ggplot2::labs(title = title,
+                    fill = paste0(trend_col,"\n", start_year, "-", end_year)) +
+      ggplot2::theme(legend.position = "right",
+                     line = ggplot2::element_line(linewidth = 0.4),
+                     rect = ggplot2::element_rect(linewidth = 0.1),
+                     axis.text = ggplot2::element_blank(),
+                     axis.line = ggplot2::element_blank(),
+                     axis.title = ggplot2::element_blank())
+
+    if(discrete_column){
+      m <- m +
+       ggplot2::guides(fill = ggplot2::guide_legend(reverse = TRUE))
+    }else{
+      m <- m +
+        ggplot2::guides(fill = ggplot2::guide_colourbar(reverse = FALSE))
+    }
+
+    if(col_viridis | is.null(pal)) {
+      if(discrete_column){
+      m <- m + ggplot2::scale_fill_viridis_d(na.value = "white",drop = FALSE)
+      }else{
+      m <- m + ggplot2::scale_fill_viridis_c(na.value = "white")
+      }
+    } else {
+
+      if(col_ebird){
+        m <- m + ggplot2::scale_fill_manual(values = pal, na.value = "#CCCCCC",
+                                            drop = FALSE)
+
+      }else{
+        m <- m + ggplot2::scale_fill_manual(values = pal, na.value = "white",
+                                            drop = FALSE)
+      }
+
+
+    }
+
+  }
+  if(zoom_range){
+    m <- m+zoom
+    }
+  m
+}
+```
+
+### Stratify data
+```{r}
+#all code adapted from: https://bbsbayes.github.io/bbsBayes2/articles/bbsBayes2.html
+
+#stratify data by state
+#s <- stratify(by = "prov_state", species = "Scissor-tailed Flycatcher", release = 2025)
+#stratify data by latlong
+s <- stratify(by = "latlong", species = "Painted Bunting", release = 2025)
+
+#prepare data for modeling (filtering to omit routes with too few samples, etc.)
+p <- prepare_data(s)
+#Next we will prepare the model parameters and initialization values 
+md <- prepare_model(p, model = "first_diff")
+#run the model (using default settings)
+m <- run_model(md, iter_sampling = 2000, iter_warmup = 5000, chains = 4, parallel_chains = 2)
+```
+
+### evaluate model convergence
+```{r}
+#Convergence diagnostics for all parameters
+converge <- get_convergence(m)
+#Sort from highest to lowest rhat (all should be under 1.1 for good convergence)
+head(converge[order(converge$rhat, decreasing = TRUE),])
+#Sort from lowest to highest ess_bulk (all should be over 400 for good convergence)
+head(converge[order(converge$ess_bulk, decreasing = FALSE),])
+```
+
+### plot trends
+```{r}
+#Indices (annual indices of relative abundance) represent mean predicted annual counts of the species in a given region, on an average route, by an average observer. The pattern in the time-series of these annual indices for a given region represent the estimated population trajectory.
+i <- generate_indices(model_output = m)
+#
+# generates a list of ggplot graphs, one for each region
+p <- plot_indices(indices = i, add_observed_means = TRUE)
+names(p)
+
+#plot continental and subset to 2000 and beyond
+p1_mod <- p[["continent"]]+
+  coord_cartesian(xlim = c(2000,NA))+ #subset of years
+  labs(title = "") # remove the title
+print(p1_mod)
+
+#print just Kansas
+print(p[["26_97"]])
+
+#add spaghetti lines to plot
+p <- plot_indices(indices = i, add_observed_means = TRUE, spaghetti = TRUE)
+print(p[["continent"]])
+
+
+### Next we can calculate the long-term trends based on these indices
+#Note all trends from bbsBayes2 models are derived from summaries of indices through time or between two points in time
+
+#generate trends
+t <- generate_trends(i)
+
+#plot
+trend_map <- plot_map(t)
+# load states and province map to overlay the 1-degree grid
+States_Provinces <- load_map("prov_state")
+# create a bounding box for the map, focused on the regions with data.
+bb <- load_map("latlong") %>%
+  filter(strata_name %in% t$meta_strata$strata_name) %>%
+  sf::st_bbox()
+# plot the map
+trend_map + geom_sf(data = States_Provinces, fill = NA, colour = "black") +
+  coord_sf(xlim = bb[c("xmin","xmax")], ylim = bb[c("ymin","ymax")])
+
+pp <- trend_map + geom_sf(data = States_Provinces, fill = NA, colour = "black") +
+  coord_sf(xlim = bb[c("xmin","xmax")], ylim = bb[c("ymin","ymax")])
+
+ggsave("~/Desktop/painted.bunting.note/grid.map.pdf", pp, width = 6, height = 6, units = "in")
+
+#recolor
+trend_map <- plot_map(t, col_ebird = T)
+# plot the map
+trend_map + geom_sf(data = States_Provinces, fill = NA, colour = "black") +
+  coord_sf(xlim = bb[c("xmin","xmax")], ylim = bb[c("ymin","ymax")])
+
+#recolor
+trend_map <- plot_map(t, col_viridis = T)
+# plot the map
+trend_map + geom_sf(data = States_Provinces, fill = NA, colour = "black") +
+  coord_sf(xlim = bb[c("xmin","xmax")], ylim = bb[c("ymin","ymax")])
+
+#use total percentage change instead
+trend_map <- plot_map(t, alternate_column = "percent_change")
+# plot the map
+trend_map + geom_sf(data = States_Provinces, fill = NA, colour = "black") +
+  coord_sf(xlim = bb[c("xmin","xmax")], ylim = bb[c("ymin","ymax")])
+
+```
+
+
+### repeat at the state level
+```{r}
+#stratify data by state
+s <- stratify(by = "prov_state", species = "Painted Bunting", release = 2025)
+
+#prepare data for modeling (filtering to omit routes with too few samples, etc.)
+p <- prepare_data(s)
+#Next we will prepare the model parameters and initialization values 
+md <- prepare_model(p, model = "first_diff")
+#run the model
+m <- run_model(md, iter_sampling = 2000, iter_warmup = 5000, chains = 4, parallel_chains = 2)
+```
+
+### Assess convergence
+```{r}
+#Convergence diagnostics for all parameters
+converge <- get_convergence(m)
+#Sort from highest to lowest rhat (all should be under 1.1 for good convergence)
+head(converge[order(converge$rhat, decreasing = TRUE),])
+#Sort from lowest to highest ess_bulk (all should be over 400 for good convergence)
+head(converge[order(converge$ess_bulk, decreasing = FALSE),])
+```
+
+### plot trends
+```{r}
+#Indices (annual indices of relative abundance) represent mean predicted annual counts of the species in a given region, on an average route, by an average observer. The pattern in the time-series of these annual indices for a given region represent the estimated population trajectory.
+i <- generate_indices(model_output = m)
+#
+# generates a list of ggplot graphs, one for each region
+p <- plot_indices(indices = i, add_observed_means = TRUE)
+names(p)
+
+#plot continental and subset to 2000 and beyond
+p1_mod <- p[["continent"]]+
+  coord_cartesian(xlim = c(2000,NA))+ #subset of years
+  labs(title = "") # remove the title
+print(p1_mod)
+
+#print just Kansas
+print(p[["KS"]])
+
+#add spaghetti lines to plot
+p <- plot_indices(indices = i, add_observed_means = TRUE, spaghetti = TRUE)
+print(p[["KS"]])
+
+
+### Next we can calculate the long-term trends based on these indices
+#Note all trends from bbsBayes2 models are derived from summaries of indices through time or between two points in time
+
+#generate trends
+t <- generate_trends(i)
+
+#plot
+plot_map(t)
+plot_map(t, alternate_column = "percent_change")
+
+#isolate Kansas trends
+x<-t[["trends"]]
+x<-x[x$region == "KS",]
+x
+
+#save the state map
+sm <- plot_map(t)
+ggsave("~/Desktop/painted.bunting.note/state.map.pdf", sm, width = 6, height = 6, units = "in")
+```
+
+

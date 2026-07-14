@@ -1,0 +1,144 @@
+---
+title: "Climate versus vagrancy data for PABU"
+format:
+  html:
+    code-fold: show
+    code-tools: true
+toc: true
+toc-title: Document Contents
+number-sections: true
+embed-resources: true
+---
+
+### Grab vagrancy data for SD and plot against sightings
+```{r}
+SD.vagrancy<-read.csv("~/Desktop/painted.bunting.note/SD.annual.temp.csv")
+SD.vagrancy$date<-row.names(SD.vagrancy)
+SD.vagrancy$date<-substr(SD.vagrancy$date,1,4)
+SD.vagrancy<-SD.vagrancy[3:78,c(2,1)]
+rownames(SD.vagrancy)<-NULL
+colnames(SD.vagrancy)<-c("date","temp")
+SD.vagrancy[77,]<-c("2026",NA)
+SD.vagrancy$PABU<-c(rep(0, times=53),1,rep(0, times=7),1,rep(0, times=2),1,rep(0, times=5),1,0,3,0,0,0,2)
+#convert farenheit to celsius
+SD.vagrancy$temp<-as.numeric(SD.vagrancy$temp)
+SD.vagrancy$temp <- (SD.vagrancy$temp - 32) * (5 / 9)
+
+#calculate rolling average temp in the previous 10 year window
+rolling.avg<-c(rep(NA, times=9))
+for (i in 10:77){
+  rolling.avg[i]<-mean(SD.vagrancy$temp[c((i-9):i)])
+}
+#add to DF
+SD.vagrancy$rolling.avg.temp<-rolling.avg
+
+
+#calculate rolling average # of PABU's in the previous 10 year window
+SD.vagrancy$PABU<-as.numeric(SD.vagrancy$PABU)
+rolling.avg<-c(rep(NA, times=9))
+for (i in 10:77){
+  rolling.avg[i]<-mean(SD.vagrancy$PABU[c((i-9):i)])
+}
+#add to DF
+SD.vagrancy$rolling.avg.PABU<-rolling.avg
+
+##ggplot
+library(ggplot2)
+
+ggplot(SD.vagrancy, aes(x = date)) +
+  geom_line(aes(y = rolling.avg.PABU*100, color = "PABU abundance", group = 1)) +
+  geom_line(aes(y = rolling.avg.temp, color = "temp", group = 1)) +
+  scale_color_manual(name = "Legend", values = c("PABU abundance" = "blue", "temp" = "red")) +
+  labs(y = "Values") +
+  theme_classic()
+
+ggplot(SD.vagrancy, aes(x = date)) +
+  #geom_point(aes(y = rolling.avg.PABU*2+6.5, color = "PABU abundance", group = 1)) +
+  #geom_point(aes(y = rolling.avg.temp, color = "temp", group = 1)) +
+  geom_line(aes(y = rolling.avg.PABU*2+6.5, color = "PABU abundance", group = 1)) +
+  geom_line(aes(y = rolling.avg.temp, color = "temp", group = 1)) +
+  ylim(6.5, 8.5) +
+  scale_color_manual(name = "Legend", values = c("PABU abundance" = "gray", "temp" = "black")) +
+  labs(y = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+
+pp <- ggplot(SD.vagrancy, aes(x = date)) +
+  geom_line(aes(y = rolling.avg.PABU*2+6.5, color = "PABU abundance", group = 1)) +
+  geom_line(aes(y = rolling.avg.temp, color = "temp", group = 1)) +
+  ylim(6.5, 8.5) +
+  scale_color_manual(name = "Legend", values = c("PABU abundance" = "gray", "temp" = "black")) +
+  labs(y = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+#ggsave("~/Desktop/painted.bunting.note/SD.obs.pdf", pp, width = 8, height = 4, units = "in")
+```
+
+
+### Grab vagrancy data for Nebraska and plot against sightings
+```{r}
+NE.vagrancy<-read.csv("~/Desktop/painted.bunting.note/NOAA.neb.annual.temp.csv")
+NE.vagrancy$date<-row.names(NE.vagrancy)
+NE.vagrancy$date<-substr(NE.vagrancy$date,1,4)
+NE.vagrancy<-NE.vagrancy[3:78,c(2,1)]
+rownames(NE.vagrancy)<-NULL
+colnames(NE.vagrancy)<-c("date","temp")
+NE.vagrancy[77,]<-c("2026",NA)
+NE.vagrancy$PABU<-c(rep(0, times=10),1,rep(0, times=5),1,1,rep(0, times=5),1,rep(0, times=9),1,rep(0, times=12),2,rep(0, times=5),2,1,rep(0, times=2),2,0,2,rep(0, times=5),1,rep(0, times=4),2,0,1,1,1,0,0,2)
+#convert farenheit to celsius
+NE.vagrancy$temp<-as.numeric(NE.vagrancy$temp)
+NE.vagrancy$temp <- (NE.vagrancy$temp - 32) * (5 / 9)
+
+#calculate rolling average temp in the previous 10 year window
+rolling.avg<-c(rep(NA, times=9))
+for (i in 10:77){
+  rolling.avg[i]<-mean(NE.vagrancy$temp[c((i-9):i)])
+}
+#add to DF
+NE.vagrancy$rolling.avg.temp<-rolling.avg
+
+
+#calculate rolling average # of PABU's in the previous 10 year window
+NE.vagrancy$PABU<-as.numeric(NE.vagrancy$PABU)
+rolling.avg<-c(rep(NA, times=9))
+for (i in 10:77){
+  rolling.avg[i]<-mean(NE.vagrancy$PABU[c((i-9):i)])
+}
+#add to DF
+NE.vagrancy$rolling.avg.PABU<-rolling.avg
+
+##ggplot
+library(ggplot2)
+
+ggplot(NE.vagrancy, aes(x = date)) +
+  geom_line(aes(y = rolling.avg.PABU*100, color = "PABU abundance", group = 1)) +
+  geom_line(aes(y = rolling.avg.temp, color = "temp", group = 1)) +
+  scale_color_manual(name = "Legend", values = c("PABU abundance" = "blue", "temp" = "red")) +
+  labs(y = "Values") +
+  theme_classic()
+
+ggplot(NE.vagrancy, aes(x = date)) +
+  #geom_point(aes(y = rolling.avg.PABU*2+8.5, color = "PABU abundance", group = 1)) +
+  #geom_point(aes(y = rolling.avg.temp, color = "temp", group = 1)) +
+  geom_line(aes(y = rolling.avg.PABU*2+8.5, color = "PABU abundance", group = 1)) +
+  geom_line(aes(y = rolling.avg.temp, color = "temp", group = 1)) +
+  ylim(8.5, 10.5) +
+  scale_color_manual(name = "Legend", values = c("PABU abundance" = "gray", "temp" = "black")) +
+  labs(y = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+
+pp <- ggplot(NE.vagrancy, aes(x = date)) +
+  geom_line(aes(y = rolling.avg.PABU*2+8.5, color = "PABU abundance", group = 1)) +
+  geom_line(aes(y = rolling.avg.temp, color = "temp", group = 1)) +
+  ylim(8.5, 10.5) +
+  scale_color_manual(name = "Legend", values = c("PABU abundance" = "gray", "temp" = "black")) +
+  labs(y = "") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+ggsave("~/Desktop/painted.bunting.note/NE.obs.pdf", pp, width = 8, height = 4, units = "in")
+```
